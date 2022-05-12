@@ -139,6 +139,7 @@ stages:
               command: test
               projects: '**/*.Tests.UnitTests.csproj'
               arguments: '--no-build --configuration $(buildConfiguration)'
+              testRunTitle: Unit Tests - $(Agent.OS)
 
       # Integration Tests (SQLite)
       - job:
@@ -171,6 +172,7 @@ stages:
               command: test
               projects: '**/Umbraco.Tests.Integration.csproj'
               arguments: '--no-build --configuration $(buildConfiguration)'
+              testRunTitle: Integration Tests SQLite - $(Agent.OS)
             env:
               Tests__Database__DatabaseType: 'Sqlite'
               Umbraco__Cms__global__MainDomLock: 'FileSystemMainDomLock'
@@ -197,6 +199,7 @@ stages:
               command: test
               projects: '**/Umbraco.Tests.Integration.csproj'
               arguments: '--no-build --configuration $(buildConfiguration)'
+              testRunTitle: Integration Tests SQL Server - $(Agent.OS)
             env:
               Tests__Database__SQLServerMasterConnectionString: 'Server=localhost,1433;User Id=sa;Password=$(SA_PASSWORD);'
               Tests__Database__DatabaseType: SqlServer
@@ -223,6 +226,7 @@ stages:
               command: test
               projects: '**/Umbraco.Tests.Integration.csproj'
               arguments: '--no-build --configuration $(buildConfiguration)'
+              testRunTitle: Integration Tests SQL Server - $(Agent.OS)
             env:
               Tests__Database__DatabaseType: LocalDb
               Umbraco__Cms__global__MainDomLock: MainDomSemaphoreLock
