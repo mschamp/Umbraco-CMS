@@ -41,16 +41,8 @@ stages:
     jobs:
       - job:
         displayName: Build Umbraco CMS
-        strategy:
-          matrix:
-            Windows:
-              vmImage: 'windows-latest'
-              artifactName: build_output_windows
-            Linux:
-              vmImage: 'ubuntu-latest'
-              artifactName: build_output_linux
         pool:
-          vmImage: $(vmImage)
+          vmImage: 'ubuntu-latest'
         steps:
           - task: NodeTool@0
             displayName: Use node $(nodeVersion)
@@ -81,11 +73,33 @@ stages:
               command: build
               projects: umbraco.sln
               arguments: '--configuration $(buildConfiguration)'
+          - task: PowerShell@2
+            displayName: Prepare web app (Windows)
+            inputs:
+              workingDirectory: $(Build.SourcesDirectory)/src/Umbraco.Web.UI/
+              targetType: inline
+              script: dotnet publish --configuration $(buildConfiguration) --os win -o $(Build.ArtifactStagingDirectory)/webapp_windows
+          - task: PublishPipelineArtifact@1
+            displayName: Publish web app (Windows)
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/webapp_windows
+              artifactName: webapp_windows
+          - task: PowerShell@2
+            displayName: Prepare web app (Linux)
+            inputs:
+              workingDirectory: $(Build.SourcesDirectory)/src/Umbraco.Web.UI/
+              targetType: inline
+              script: dotnet publish --configuration $(buildConfiguration) --os linux -o $(Build.ArtifactStagingDirectory)/webapp_linux
+          - task: PublishPipelineArtifact@1
+            displayName: Publish web app (Linux)
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/webapp_linux
+              artifactName: webapp_linux
           - task: PublishPipelineArtifact@1
             displayName: Publish build artifacts
             inputs:
               targetPath: $(Build.SourcesDirectory)
-              artifactName: $(artifactName)
+              artifactName: build_output
 
   ###############################################
   ## Test
@@ -101,13 +115,10 @@ stages:
           matrix:
             Windows:
               vmImage: 'windows-latest'
-              artifactName: build_output_windows
             Linux:
               vmImage: 'ubuntu-latest'
-              artifactName: build_output_linux
             macOS:
               vmImage: 'macOS-latest'
-              artifactName: build_output_linux
         pool:
           vmImage: $(vmImage)
         steps:
@@ -115,7 +126,7 @@ stages:
           - task: DownloadPipelineArtifact@2
             displayName: Download build artifacts
             inputs:
-              artifact: $(artifactName)
+              artifact: build_output
               path: $(Build.SourcesDirectory)
           - task: UseDotNet@2
             condition: and(succeeded(), eq(variables['Agent.OS'], 'Darwin')) # net6 already on the other images
@@ -136,13 +147,10 @@ stages:
           matrix:
             Windows:
               vmImage: 'windows-latest'
-              artifactName: build_output_windows
             Linux:
               vmImage: 'ubuntu-latest'
-              artifactName: build_output_linux
             macOS:
               vmImage: 'macOS-latest'
-              artifactName: build_output_linux
         pool:
           vmImage: $(vmImage)
         steps:
@@ -150,7 +158,7 @@ stages:
           - task: DownloadPipelineArtifact@2
             displayName: Download build artifacts
             inputs:
-              artifact: $(artifactName)
+              artifact: build_output
               path: $(Build.SourcesDirectory)
           - task: UseDotNet@2
             displayName: Use net6
@@ -181,7 +189,7 @@ stages:
           - task: DownloadPipelineArtifact@2
             displayName: Download build artifacts
             inputs:
-              artifact: build_output_linux
+              artifact: build_output
               path: $(Build.SourcesDirectory)
           - task: DotNetCoreCLI@2
             displayName: Run dotnet test
@@ -205,7 +213,7 @@ stages:
           - task: DownloadPipelineArtifact@2
             displayName: Download build artifacts
             inputs:
-              artifact: build_output_windows
+              artifact: build_output
               path: $(Build.SourcesDirectory)
           - powershell: sqllocaldb start mssqllocaldb
             displayName: Start localdb
@@ -237,14 +245,18 @@ stages:
             value: UmbracoAcceptance123!
           - name: Umbraco__CMS__Global__InstallMissingDatabase
             value: true
+          - name: ASPNETCORE_ENVIRONMENT
+            value: Development # because we want std out and we're not using dotnet runls
+          - name: ASPNETCORE_URLS
+            value: https://localhost:44331 # Because our cypress setup expects it as such.
         strategy:
           matrix:
             Windows:
               vmImage: 'windows-latest'
-              artifactName: build_output_windows
+              appArtifact: webapp_windows
             Linux:
               vmImage: 'ubuntu-latest'
-              artifactName: build_output_linux
+              appArtifact: webapp_linux
         pool:
             vmImage: $(vmImage)
         steps:
@@ -252,12 +264,17 @@ stages:
           - task: DownloadPipelineArtifact@2
             displayName: Download build artifacts
             inputs:
-              artifact: $(artifactName)
+              artifact: build_output
               path: $(Build.SourcesDirectory)
+          - task: DownloadPipelineArtifact@2
+            displayName: Download app
+            inputs:
+              artifact: $(appArtifact)
+              path: $(Build.SourcesDirectory)/app
           - task: NodeTool@0
             displayName: Use Node $(nodeVersion)
             inputs:
-                versionSpec: $(nodeVersion)
+              versionSpec: $(nodeVersion)
           - task: Cache@2
             displayName: Cache node_modules
             inputs:
@@ -271,55 +288,62 @@ stages:
               command: ci
               workingDir: $(Build.SourcesDirectory)/tests/Umbraco.Tests.AcceptanceTest/
               verbose: false
-          - task: PowerShell@2
-            displayName: Start application (Windows)
-            condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'))
-            inputs:
-              workingDirectory: $(Build.SourcesDirectory)/src/Umbraco.Web.UI
-              targetType: inline
-              script: Start-Process -RedirectStandardOutput $(Build.ArtifactStagingDirectory)/dotnet_run_windows.txt -FilePath "dotnet" -ArgumentList "run --no-build --configuration $(buildConfiguration)"
-          - task: Bash@3
-            condition: and(succeeded(), eq(variables['Agent.OS'], 'Linux'))
-            displayName: Fix permissions # lost during artifact creation
-            inputs:
-              workingDirectory: $(Build.SourcesDirectory)/src/Umbraco.Web.UI
-              targetType: 'inline'
-              script: chmod +x bin/Release/net6.0/Umbraco.Web.UI
-          - task: Bash@3
-            condition: and(succeeded(), eq(variables['Agent.OS'], 'Linux'))
-            displayName: Start application (Linux)
-            inputs:
-              workingDirectory: $(Build.SourcesDirectory)/src/Umbraco.Web.UI
-              targetType: 'inline'
-              script: 'nohup dotnet run --no-build --configuration $(buildConfiguration) > $(Build.ArtifactStagingDirectory)/dotnet_run_linux.txt &'
-          - task: PowerShell@2
-            displayName: Generate Cypress.env.json
-            inputs:
-              targetType: inline
-              script: >
-                @{ username = "$(Umbraco__CMS__Unattended__UnattendedUserEmail)"; password = "$(Umbraco__CMS__Unattended__UnattendedUserPassword)" } | ConvertTo-Json | Set-Content -Path "tests/Umbraco.Tests.AcceptanceTest/cypress.env.json"
-          - task: PowerShell@2
-            displayName: Run Cypress (Desktop)
-            condition: always()
-            continueOnError: true
-            inputs:
-                targetType: inline
-                workingDirectory: tests/Umbraco.Tests.AcceptanceTest
-                script: 'npm run test -- --reporter junit --reporter-options "mochaFile=results/test-output-D-[hash].xml,toConsole=true" --config="viewportHeight=1600,viewportWidth=2560,screenshotsFolder=cypress/artifacts/desktop/screenshots,videosFolder=cypress/artifacts/desktop/videos,videoUploadOnPasses=false"'
-          - task: PublishTestResults@2
-            displayName: Publish test results
-            condition: always()
-            inputs:
-                testResultsFormat: 'JUnit'
-                testResultsFiles: 'tests/Umbraco.Tests.AcceptanceTest/results/test-output-D-*.xml'
-                mergeTestResults: true
-                testRunTitle: "Test results Desktop"
-          - task: CopyFiles@2
-            inputs:
-              sourceFolder: $(Build.SourcesDirectory)/tests/Umbraco.Tests.AcceptanceTest/cypress/artifacts
-              targetFolder: $(Build.ArtifactStagingDirectory)/cypresss
-          - task: PublishPipelineArtifact@1
-            displayName: "Publish test artifacts"
-            inputs:
-                targetPath: $(Build.ArtifactStagingDirectory)
-                artifact: 'E2E artifacts - $(Agent.OS) - Attempt #$(System.JobAttempt)'
+          # - task: PowerShell@2
+          #   displayName: Create media dir hack...
+          #   inputs:
+          #     workingDirectory: $(Build.SourcesDirectory)/app
+          #     targetType: inline
+          #     script: mkdir -p wwwroot/media
+          # - task: PowerShell@2
+          #   displayName: Start application (Windows)
+          #   condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'))
+          #   inputs:
+          #     workingDirectory: $(Build.SourcesDirectory)/app
+          #     targetType: inline
+          #     script: Start-Process -RedirectStandardOutput $(Build.ArtifactStagingDirectory)/dotnet_run_windows.txt -FilePath "dotnet" -ArgumentList "Umbraco.Web.UI.dll"
+          # - task: Bash@3
+          #   condition: and(succeeded(), eq(variables['Agent.OS'], 'Linux'))
+          #   displayName: Permissions hack (Linux)
+          #   inputs:
+          #     workingDirectory: $(Build.SourcesDirectory)/app
+          #     targetType: 'inline'
+          #     script: 'chmod +x Umbraco.Web.UI'
+          # - task: Bash@3
+          #   condition: and(succeeded(), eq(variables['Agent.OS'], 'Linux'))
+          #   displayName: Start application (Linux)
+          #   inputs:
+          #     workingDirectory: $(Build.SourcesDirectory)/app
+          #     targetType: 'inline'
+          #     script: 'nohup dotnet Umbraco.Web.UI > $(Build.ArtifactStagingDirectory)/dotnet_run_linux.txt &'
+          # - task: PowerShell@2
+          #   displayName: Generate Cypress.env.json
+          #   inputs:
+          #     targetType: inline
+          #     script: >
+          #       @{ username = "$(Umbraco__CMS__Unattended__UnattendedUserEmail)"; password = "$(Umbraco__CMS__Unattended__UnattendedUserPassword)" } | ConvertTo-Json | Set-Content -Path "tests/Umbraco.Tests.AcceptanceTest/cypress.env.json"
+          # - task: PowerShell@2
+          #   displayName: Run Cypress (Desktop)
+          #   condition: always()
+          #   continueOnError: true
+          #   inputs:
+          #     targetType: inline
+          #     workingDirectory: tests/Umbraco.Tests.AcceptanceTest
+          #     script: 'npm run test -- --reporter junit --reporter-options "mochaFile=results/test-output-D-[hash].xml,toConsole=true" --config="viewportHeight=1600,viewportWidth=2560,screenshotsFolder=cypress/artifacts/desktop/screenshots,videosFolder=cypress/artifacts/desktop/videos,videoUploadOnPasses=false"'
+          # - task: PublishTestResults@2
+          #   displayName: Publish test results
+          #   condition: always()
+          #   inputs:
+          #     testResultsFormat: 'JUnit'
+          #     testResultsFiles: 'tests/Umbraco.Tests.AcceptanceTest/results/test-output-D-*.xml'
+          #     mergeTestResults: true
+          #     testRunTitle: "Test results Desktop"
+          # - task: CopyFiles@2
+          #   inputs:
+          #     sourceFolder: $(Build.SourcesDirectory)/tests/Umbraco.Tests.AcceptanceTest/cypress/artifacts
+          #     targetFolder: $(Build.ArtifactStagingDirectory)/cypresss
+          # - task: PublishPipelineArtifact@1
+          #   displayName: "Publish test artifacts"
+          #   condition: always()
+          #   inputs:
+          #     targetPath: $(Build.ArtifactStagingDirectory)
+          #     artifact: 'E2E artifacts - $(Agent.OS) - Attempt #$(System.JobAttempt)'
