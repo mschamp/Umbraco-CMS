@@ -75,15 +75,14 @@ stages:
               arguments: '--configuration $(buildConfiguration)'
           # TODO: Pretty sure we can have a Umbraco.Cms.csproj for creating metapackage
           # TODO: Pretty sure we can have a csproj for creating templates also?
-          # TODO: Version numbers passed to nuget pack (or fix with csprojs instead (if so back to ubuntu-latest agent))
           - task: PowerShell@2
             displayName: Prepare nupkg
             inputs:
               targetType: inline
               script: |
                dotnet pack --no-build --configuration $(buildConfiguration) umbraco.sln -o $(Build.ArtifactStagingDirectory)/nupkg
-               nuget Pack templates/Umbraco.Templates.nuspec -outputDirectory $(Build.ArtifactStagingDirectory)/nupkg
-               nuget Pack build/NuSpecs/UmbracoCms.nuspec -outputDirectory $(Build.ArtifactStagingDirectory)/nupkg
+               nuget Pack -Version "$(GitAssemblyInformationalVersion)" templates/Umbraco.Templates.nuspec -outputDirectory $(Build.ArtifactStagingDirectory)/nupkg
+               nuget Pack -Version "$(GitAssemblyInformationalVersion)" build/NuSpecs/UmbracoCms.nuspec -outputDirectory $(Build.ArtifactStagingDirectory)/nupkg
           - task: PublishPipelineArtifact@1
             displayName: Publish nupkg
             inputs:
