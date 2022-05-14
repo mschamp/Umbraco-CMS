@@ -75,24 +75,26 @@ stages:
               arguments: '--configuration $(buildConfiguration)'
           # TODO: Pretty sure we can have a Umbraco.Cms.csproj for creating metapackage
           # TODO: Pretty sure we can have a csproj for creating templates also?
+          # TODO: Update GitAssemblyInformationalVersion in Umbraco.GitVersioning somehow
           - task: PowerShell@2
             displayName: Prepare nupkg
             inputs:
               targetType: inline
               script: |
                dotnet pack --no-build --configuration $(buildConfiguration) umbraco.sln -o $(Build.ArtifactStagingDirectory)/nupkg
-               nuget Pack -Version "$(GitAssemblyInformationalVersion)" templates/Umbraco.Templates.nuspec -outputDirectory $(Build.ArtifactStagingDirectory)/nupkg
-               nuget Pack -Version "$(GitAssemblyInformationalVersion)" build/NuSpecs/UmbracoCms.nuspec -outputDirectory $(Build.ArtifactStagingDirectory)/nupkg
+               $nuspecVersion = "$(GitAssemblyInformationalVersion)" -replace "\+",".g"
+               nuget Pack -Version "$($nuspecVersion)" templates/Umbraco.Templates.nuspec -outputDirectory $(Build.ArtifactStagingDirectory)/nupkg
+               nuget Pack -Version "$($nuspecVersion)" build/NuSpecs/UmbracoCms.nuspec -outputDirectory $(Build.ArtifactStagingDirectory)/nupkg
           - task: PublishPipelineArtifact@1
             displayName: Publish nupkg
             inputs:
               targetPath: $(Build.ArtifactStagingDirectory)/nupkg
               artifactName: nupkg
-          - task: PublishPipelineArtifact@1
-            displayName: Publish build artifacts
-            inputs:
-              targetPath: $(Build.SourcesDirectory)
-              artifactName: build_output
+          # - task: PublishPipelineArtifact@1
+          #   displayName: Publish build artifacts
+          #   inputs:
+          #     targetPath: $(Build.SourcesDirectory)
+          #     artifactName: build_output
 
   ###############################################
   ## Test
@@ -115,12 +117,12 @@ stages:
         pool:
           vmImage: $(vmImage)
         steps:
-          - checkout: none
-          - task: DownloadPipelineArtifact@2
-            displayName: Download build artifacts
-            inputs:
-              artifact: build_output
-              path: $(Build.SourcesDirectory)
+          # - checkout: none
+          # - task: DownloadPipelineArtifact@2
+          #   displayName: Download build artifacts
+          #   inputs:
+          #     artifact: build_output
+          #     path: $(Build.SourcesDirectory)
           - task: UseDotNet@2
             condition: and(succeeded(), eq(variables['Agent.OS'], 'Darwin')) # net6 already on the other images
             displayName: Use net6
@@ -131,7 +133,7 @@ stages:
             inputs:
               command: test
               projects: '**/*.Tests.UnitTests.csproj'
-              arguments: '--no-build --configuration $(buildConfiguration)'
+              arguments: '--configuration $(buildConfiguration)'
               testRunTitle: Unit Tests - $(Agent.OS)
 
   #     # Integration Tests (SQLite)
