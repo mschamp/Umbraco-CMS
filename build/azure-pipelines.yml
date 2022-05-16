@@ -73,6 +73,8 @@ stages:
               command: build
               projects: umbraco.sln
               arguments: '--configuration $(buildConfiguration)'
+          # TODO: Umbraco.Templates as csproj
+          # TODO: Umbraco.Cms as csproj
           - task: PowerShell@2
             displayName: Prepare nupkg
             inputs:
@@ -110,8 +112,8 @@ stages:
   ###############################################
   ## Test
   ###############################################
-  - stage: Test
-    displayName: Test
+  - stage: Unit
+    displayName: Unit Tests
     dependsOn: Build
     jobs:
       # Unit Tests
@@ -146,6 +148,10 @@ stages:
               arguments: '--no-build --configuration $(buildConfiguration)'
               testRunTitle: Unit Tests - $(Agent.OS)
 
+  - stage: Integration
+    displayName: Integration Tests
+    dependsOn: Build
+    jobs:
       # Integration Tests (SQLite)
       - job:
         displayName: Integration Tests (SQLite)
@@ -181,7 +187,7 @@ stages:
               Tests__Database__DatabaseType: 'Sqlite'
               Umbraco__Cms__global__MainDomLock: 'FileSystemMainDomLock'
 
-      # Integration Tests (SQL Server)
+      # Integration Tests (SQL Server) Linux
       - job:
         condition: or(not(or(variables.isDev, variables.isFeature)), ${{parameters.sqlServerIntegrationTests}})
         displayName: Integration Tests (SQL Server) Linux
@@ -208,6 +214,7 @@ stages:
               Tests__Database__DatabaseType: SqlServer
               Umbraco__Cms__global__MainDomLock: SqlMainDomLock
 
+      # Integration Tests (SQL Server) Windows
       - job:
         condition: or(not(or(variables.isDev, variables.isFeature)), ${{parameters.sqlServerIntegrationTests}})
         displayName: Integration Tests (SQL Server) Windows
@@ -233,7 +240,11 @@ stages:
               Tests__Database__DatabaseType: LocalDb
               Umbraco__Cms__global__MainDomLock: MainDomSemaphoreLock
 
-      # E2E Tests
+  - stage: E2E
+    displayName: E2E Tests
+    dependsOn: Build
+    jobs:
+    # E2E Tests
       - job:
         displayName: E2E Tests
         variables:
@@ -249,6 +260,12 @@ stages:
               vmImage: 'ubuntu-latest'
               dockerfile: umbraco-linux.docker
               dockerImageName: umbraco-linux
+              cypressBinaries: "/home/vsts/.cache/Cypress"
+            Windos:
+              vmImage: 'windows-latest'
+              dockerfile: umbraco-windows.docker
+              dockerImageName: umbraco-windows
+              cypressBinaries: $(LOCALAPPDATA)/Cypress
         pool:
             vmImage: $(vmImage)
         steps:
@@ -271,7 +288,7 @@ stages:
             displayName: Cache cypress binaries
             inputs:
               key: '"e2e_cypress" | "$(Agent.OS)" | $(Build.SourcesDirectory)/tests/Umbraco.Tests.AcceptanceTest/package-lock.json'
-              path: "~/.cache/Cypress"
+              path: $(cypressBinaries)
           - task: Npm@1
             displayName: Run npm ci
             condition: and(succeeded(), ne(variables.CACHE_RESTORED, 'true'))
