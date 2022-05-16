@@ -11,8 +11,7 @@ WORKDIR /build
 COPY nuget.config .
 RUN dotnet new --install /nupkg/Umbraco.Templates.*.nupkg
 RUN dotnet new umbraco --name Cypress -o . --no-restore
-# dotnet build --source /nupkg --source https://api.nuget.org/v3/index.json works on linux but not on windows..     https://github.com/NuGet/Home/issues/7413
-RUN dotnet restore --configfile ./nuget.config
+RUN dotnet restore -s /nupkg -s https://api.nuget.org/v3/index.json
 RUN dotnet publish --no-restore --configuration Release -o /dist 
 
 ############################################
@@ -26,11 +25,9 @@ COPY --from=build dist .
 
 ENV ASPNETCORE_URLS="http://0.0.0.0:5000"
 ENV Umbraco__CMS__Global__InstallMissingDatabase="true"
-# Hack fix for user tests, don't show invite user button
 ENV ConnectionStrings__umbracoDbDSN_ProviderName="Microsoft.Data.SQLite"
 ENV ConnectionStrings__umbracoDbDSN="Data Source=|DataDirectory|/Umbraco.sqlite.db;Cache=Shared;Foreign Keys=True;Pooling=True"
 ENV Umbraco__CMS__Unattended__InstallUnattended="true"
-# TODO: build arg?
 ENV Umbraco__CMS__Unattended__UnattendedUserName="Cypress Test"
 ENV Umbraco__CMS__Unattended__UnattendedUserEmail="cypress@umbraco.com"
 ENV Umbraco__CMS__Unattended__UnattendedUserPassword="UmbracoAcceptance123!"
