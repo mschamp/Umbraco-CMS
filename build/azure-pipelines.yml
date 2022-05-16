@@ -337,21 +337,18 @@ stages:
                 dotnet new --install ./nupkg/Umbraco.Templates.*.nupkg
                 dotnet new umbraco --name Cypress -o . --no-restore
                 dotnet restore --configfile ./nuget.config
-                dotnet build --no-restore
-                Start-Process -FilePath "dotnet" -ArgumentList "run --no-build --no-launch-profile --urls $(CYPRESS_BASE_URL)"
+                dotnet build --no-restore -c Release
+                Start-Process -FilePath "dotnet" -ArgumentList "run --no-build -c Release --no-launch-profile --urls $(CYPRESS_BASE_URL)"
           - task: PowerShell@2
             displayName: Wait for app
-            condition: always()
-            continueOnError: true
             inputs:
               targetType: inline
               workingDirectory: tests/Umbraco.Tests.AcceptanceTest
               script: |
                 npm i -g wait-on
-                wait-on -v -i 1000 $(CYPRESS_BASE_URL)
+                wait-on -v --interval 1000 --timeout 120000 $(CYPRESS_BASE_URL)
           - task: PowerShell@2
             displayName: Run Cypress (Desktop)
-            condition: always()
             continueOnError: true
             inputs:
               targetType: inline
@@ -366,6 +363,8 @@ stages:
               mergeTestResults: true
               testRunTitle: "e2e - $(Agent.OS)"
           - task: CopyFiles@2
+            displayName: Prepare artifacts
+            condition: always()
             inputs:
               sourceFolder: $(Build.SourcesDirectory)/tests/Umbraco.Tests.AcceptanceTest/cypress/artifacts
               targetFolder: $(Build.ArtifactStagingDirectory)/cypresss

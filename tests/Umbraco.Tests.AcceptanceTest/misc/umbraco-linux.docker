@@ -8,7 +8,6 @@ WORKDIR /nupkg
 COPY nupkg .
 
 WORKDIR /build
-COPY nuget.config .
 RUN dotnet new --install /nupkg/Umbraco.Templates.*.nupkg
 RUN dotnet new umbraco --name Cypress -o . --no-restore
 RUN dotnet restore -s /nupkg -s https://api.nuget.org/v3/index.json
