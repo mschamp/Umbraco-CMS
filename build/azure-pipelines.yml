@@ -21,18 +21,6 @@ variables:
   isDev: $[endsWith('$(build.sourceBranch)', 'dev')]
   isFeature: $[contains('$(build.sourceBranch)', '/feature/')]
 
-resources:
-  containers:
-    - container: mssql
-      image: 'mcr.microsoft.com/mssql/server:2019-latest'
-      env:
-        ACCEPT_EULA: 'Y'
-        SA_PASSWORD: $(SA_PASSWORD)
-        MSSQL_PID: Developer
-      ports:
-        - '1433:1433'
-      options: '--name mssql'
-
 stages:
   ###############################################
   ## Build
@@ -186,40 +174,21 @@ stages:
               Tests__Database__DatabaseType: 'Sqlite'
               Umbraco__Cms__global__MainDomLock: 'FileSystemMainDomLock'
 
-      # Integration Tests (SQL Server) Linux
+      # Integration Tests (SQL Server)
       - job:
-        condition: or(not(or(variables.isDev, variables.isFeature)), ${{parameters.sqlServerIntegrationTests}})
-        displayName: Integration Tests (SQL Server) Linux
-        timeoutInMinutes: 120
-        services:
-          mssql: mssql
+        displayName: Integration Tests (SQL Server)
+        strategy:
+          matrix:
+            Windows:
+              vmImage: 'windows-latest'
+              testDb: LocalDb
+              connectionString: N/A
+            Linux:
+              vmImage: 'ubuntu-latest'
+              testDb: SqlServer
+              connectionString: 'Server=localhost,1433;User Id=sa;Password=$(SA_PASSWORD);'
         pool:
-          vmImage: 'ubuntu-latest'
-        steps:
-          - task: DownloadPipelineArtifact@2
-            displayName: Download build artifacts
-            inputs:
-              artifact: build_output
-              path: $(Build.SourcesDirectory)
-          - task: DotNetCoreCLI@2
-            displayName: Run dotnet test
-            inputs:
-              command: test
-              projects: '**/*.Tests.Integration.csproj'
-              arguments: '--no-build --configuration $(buildConfiguration)'
-              testRunTitle: Integration Tests SQL Server - $(Agent.OS)
-            env:
-              Tests__Database__SQLServerMasterConnectionString: 'Server=localhost,1433;User Id=sa;Password=$(SA_PASSWORD);'
-              Tests__Database__DatabaseType: SqlServer
-              Umbraco__Cms__global__MainDomLock: SqlMainDomLock
-
-      # Integration Tests (SQL Server) Windows
-      - job:
-        condition: or(not(or(variables.isDev, variables.isFeature)), ${{parameters.sqlServerIntegrationTests}})
-        displayName: Integration Tests (SQL Server) Windows
-        timeoutInMinutes: 120
-        pool:
-          vmImage:  'windows-latest'
+          vmImage: $(vmImage)
         steps:
           - task: DownloadPipelineArtifact@2
             displayName: Download build artifacts
@@ -227,7 +196,11 @@ stages:
               artifact: build_output
               path: $(Build.SourcesDirectory)
           - powershell: sqllocaldb start mssqllocaldb
-            displayName: Start localdb
+            displayName: Start localdb (Windows only)
+            condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'))
+          - powershell: docker run --name mssql -d -p 1433:1433 -e ACCEPT_EULA=Y -e SA_PASSWORD=$(SA_PASSWORD) -e MSSQL_PID=Developer mcr.microsoft.com/mssql/server:2019-latest 
+            displayName: Start SQL Server (Linux only)
+            condition: and(succeeded(), eq(variables['Agent.OS'], 'Linux'))
           - task: DotNetCoreCLI@2
             displayName: Run dotnet test
             inputs:
@@ -236,8 +209,9 @@ stages:
               arguments: '--no-build --configuration $(buildConfiguration)'
               testRunTitle: Integration Tests SQL Server - $(Agent.OS)
             env:
-              Tests__Database__DatabaseType: LocalDb
-              Umbraco__Cms__global__MainDomLock: MainDomSemaphoreLock
+              Tests__Database__DatabaseType: $(testDb)
+              Tests__Database__SQLServerMasterConnectionString: $(connectionString)
+              Umbraco__Cms__global__MainDomLock: 'SqlMainDomLock'
 
   - stage: E2E
     variables:
